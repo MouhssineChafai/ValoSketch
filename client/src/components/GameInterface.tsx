@@ -10,11 +10,6 @@ import Menu from './Menu';
 import type { GameState } from '../types';
 import { generateLobbyId } from '../utils/helpers';
 
-// Add Valorant font (you'll need to add this font to your project)
-const valorantFont = {
-  fontFamily: "'VALORANT', sans-serif"
-};
-
 function LoadingFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center text-white">
@@ -48,7 +43,6 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
 
   useEffect(() => {
     if (initialLobbyId) {
-      // Verify lobby exists when accessing directly
       socket?.emit('verify_lobby', initialLobbyId);
     }
   }, [initialLobbyId, socket]);
@@ -87,7 +81,6 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
       socketInstance.on('disconnect', (reason) => {
         console.log('Disconnected:', reason);
         if (reason === 'io server disconnect') {
-          // Server disconnected us, try to reconnect
           socketInstance?.connect();
         }
       });
@@ -97,8 +90,8 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
       });
 
       socketInstance.on('lobby_created', (newLobbyId: string) => {
-        // Just transition to game state when lobby is created
-        setGameState('game');
+        setGameState('transitioning');
+        router.push(`/lobby/${newLobbyId}`);
       });
 
       setSocket(socketInstance);
@@ -119,7 +112,6 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
       setError('Please enter a username');
       return;
     }
-    // Just generate code and show config screen
     const newLobbyId = generateLobbyId();
     setLobbyId(newLobbyId);
     setGameState('lobby');
@@ -157,14 +149,20 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
   return (
     <Suspense fallback={<LoadingFallback />}>
       <div className="relative min-h-screen text-white">
-        <VideoBackground />
+        <VideoBackground 
+          gameState={gameState} 
+          onTransitionComplete={() => {
+            if (gameState === 'transitioning') {
+              setGameState('game');
+            }
+          }} 
+        />
         
         {gameState === 'menu' ? (
           <Menu
             onCreateLobby={handleCreateLobby}
             onJoinLobby={(code: string) => {
               setLobbyId(code);
-              setGameState('lobby');
             }}
             username={username}
             setUsername={setUsername}
@@ -188,15 +186,18 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
               onGameStart={handleGameStart}
             />
           </div>
-        ) : (
-          <div className="backdrop-blur-sm bg-black/50">
+        ) : gameState === 'game' ? (
+          <div 
+            className="backdrop-blur-sm bg-black/50 transition-opacity duration-500"
+            style={{ opacity: gameState === 'game' ? 1 : 0 }}
+          >
             <Game
               socket={socket}
               lobbyId={lobbyId}
               username={username}
             />
           </div>
-        )}
+        ) : null}
       </div>
     </Suspense>
   );
