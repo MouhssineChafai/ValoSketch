@@ -59,36 +59,48 @@ io.on('connection', (socket) => {
 
   // Handle joining a lobby
   socket.on('join_lobby', async (data: { lobbyId: string, username: string }) => {
-    console.log('Join lobby attempt:', data);
-    const lobby = await getLobby(data.lobbyId);
-    
-    if (!lobby) {
-      socket.emit('error', 'Lobby not found');
-      return;
+    try {
+      const lobby = await getLobby(data.lobbyId);
+      
+      if (!lobby) {
+        socket.emit('join_lobby_response', {
+          success: false,
+          message: 'Lobby not found'
+        });
+        return;
+      }
+
+      // Add the player to the lobby
+      lobby.players.push({
+        id: socket.id,
+        username: data.username,
+        score: 0,
+        isDrawing: false,
+        isHost: false
+      });
+
+      // Save updated lobby state
+      await saveLobby(data.lobbyId, lobby);
+
+      // Join the socket room
+      socket.join(data.lobbyId);
+
+      // Notify everyone in the lobby
+      io.to(data.lobbyId).emit('player_joined', lobby.players);
+      
+      // Send success response with lobbyId
+      socket.emit('join_lobby_response', {
+        success: true,
+        lobbyId: data.lobbyId // Include the lobbyId in the response
+      });
+
+    } catch (error) {
+      console.error('Error joining lobby:', error);
+      socket.emit('join_lobby_response', {
+        success: false,
+        message: 'Failed to join lobby'
+      });
     }
-
-    if (lobby.status !== 'waiting') {
-      socket.emit('error', 'Game already in progress');
-      return;
-    }
-
-    const newPlayer = {
-      id: socket.id,
-      username: data.username,
-      score: 0,
-      isDrawing: false,
-      isHost: false
-    };
-
-    lobby.players.push(newPlayer);
-    socket.join(data.lobbyId);
-    
-    io.to(data.lobbyId).emit('player_joined', lobby.players);
-    socket.emit('joined_lobby', {
-      lobbyId: data.lobbyId,
-      settings: lobby.settings
-    });
-    await saveLobby(data.lobbyId, lobby);
   });
 
   socket.on('update_settings', async (data: { lobbyId: string, settings: GameSettings }) => {

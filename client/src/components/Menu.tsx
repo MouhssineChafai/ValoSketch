@@ -6,9 +6,9 @@ interface MenuProps {
   onCreateLobby: () => void;
   onJoinLobby: (code: string) => void;
   username: string;
-  setUsername: Dispatch<SetStateAction<string>>;
+  setUsername: (username: string) => void;
   error: string;
-  setError: Dispatch<SetStateAction<string>>;
+  setError: (error: string) => void;
 }
 
 export default function Menu({ onCreateLobby, onJoinLobby, username, setUsername, error, setError }: MenuProps) {
@@ -19,10 +19,27 @@ export default function Menu({ onCreateLobby, onJoinLobby, username, setUsername
   };
 
   const handleJoinClick = () => {
-    if (!username || !lobbyCode) {
+    // Reset any previous errors
+    setError('');
+
+    // Validate inputs
+    if (!username.trim()) {
+      setError('Please enter a username');
       return;
     }
-    onJoinLobby(lobbyCode);
+    
+    if (!lobbyCode.trim()) {
+      setError('Please enter a lobby code');
+      return;
+    }
+
+    // Validate lobby code format
+    if (!/^[A-Z0-9]{6,32}$/.test(lobbyCode)) {
+      setError('Invalid lobby code format');
+      return;
+    }
+
+    onJoinLobby(lobbyCode.toUpperCase());
   };
 
   return (
