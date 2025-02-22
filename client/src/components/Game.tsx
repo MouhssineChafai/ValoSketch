@@ -50,8 +50,8 @@ export default function Game({ socket, lobbyId, username }: GameProps) {
       </div>
 
       {/* Main content - Drawing Canvas and Tools */}
-      <div className="flex-1 flex flex-col gap-4">
-        <div className="h-16 bg-gray-800/50 rounded-lg p-4 flex items-center justify-between">
+      <div className="flex-1 flex flex-col gap-2">
+        <div className="h-16 bg-gray rounded-lg p-1 flex items-center justify-between">
           <div className="text-xl">Time Left: {timeLeft}s</div>
           <div className="text-xl">Word: {currentWord}</div>
         </div>
@@ -62,11 +62,6 @@ export default function Game({ socket, lobbyId, username }: GameProps) {
             lobbyId={lobbyId}
             isDrawing={username === currentDrawer}
           />
-        </div>
-
-        <div className="h-24 bg-gray-800/50 rounded-lg p-4">
-          {/* Drawing tools */}
-          Drawing Tools
         </div>
       </div>
 

@@ -1,156 +1,266 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Socket } from 'socket.io-client';
 
 interface DrawingCanvasProps {
-  isDrawing: boolean;
-  socket: any;
+  socket: Socket;
   lobbyId: string;
+  isDrawing: boolean;
 }
 
-export default function DrawingCanvas({ isDrawing, socket, lobbyId }: DrawingCanvasProps) {
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface DrawingTools {
+  color: string;
+  brushSize: number;
+  isEraser: boolean;
+  opacity: number;
+}
+
+interface ColorPreset {
+  name: string;
+  value: string;
+}
+
+// Add more color presets
+const COLOR_PRESETS: ColorPreset[] = [
+  { name: 'White', value: '#FFFFFF' },
+  { name: 'Black', value: '#000000' },
+  { name: 'Red', value: '#FF0000' },
+  { name: 'Orange', value: '#FFA500' },
+  { name: 'Yellow', value: '#FFFF00' },
+  { name: 'Green', value: '#008000' },
+  { name: 'Blue', value: '#0000FF' },
+  { name: 'Purple', value: '#800080' },
+  { name: 'Pink', value: '#FFC0CB' },
+  { name: 'Brown', value: '#A52A2A' },
+  { name: 'Gray', value: '#808080' },
+  { name: 'Cyan', value: '#00FFFF' },
+  { name: 'Magenta', value: '#FF00FF' },
+  { name: 'Lime', value: '#00FF00' },
+  { name: 'Teal', value: '#008080' },
+  { name: 'Navy', value: '#000080' },
+  { name: 'Maroon', value: '#800000' },
+  { name: 'Olive', value: '#808000' }
+];
+
+export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const [isDrawingMode, setIsDrawingMode] = useState(false);
-  const [color, setColor] = useState('#000000');
-  const [brushSize, setBrushSize] = useState(5);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [tools, setTools] = useState<DrawingTools>({
+    color: '#000000',
+    brushSize: 5,
+    isEraser: false,
+    opacity: 1
+  });
+  const [isDrawingActive, setIsDrawingActive] = useState(false);
+  const [lastPoint, setLastPoint] = useState<Point | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
+  // Handle canvas resize
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const updateCanvasSize = () => {
+      if (!containerRef.current || !canvasRef.current) return;
+      
+      const { width } = containerRef.current.getBoundingClientRect();
+      
+      // Maintain 16:9 aspect ratio
+      const aspectRatio = 16 / 9;
+      const newHeight = width / aspectRatio;
+      
+      setDimensions({
+        width: Math.floor(width),
+        height: Math.floor(newHeight)
+      });
 
-    // Set canvas size
-    canvas.width = 800;
-    canvas.height = 600;
-    canvas.style.width = '800px';
-    canvas.style.height = '600px';
+      // Update canvas resolution
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      
+      // Set display size
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${newHeight}px`;
+      
+      // Set actual size with pixel density
+      const scale = window.devicePixelRatio;
+      canvas.width = Math.floor(width * scale);
+      canvas.height = Math.floor(newHeight * scale);
+      
+      // Scale context to match pixel density
+      if (context) {
+        context.scale(scale, scale);
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+      }
+    };
 
-    // Get context
-    const context = canvas.getContext('2d');
-    if (!context) return;
+    // Initial size
+    updateCanvasSize();
 
-    // Set default styles
-    context.lineCap = 'round';
-    context.strokeStyle = color;
-    context.lineWidth = brushSize;
-    contextRef.current = context;
+    // Handle window resize
+    const resizeObserver = new ResizeObserver(updateCanvasSize);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    // Cleanup
+    return () => {
+      resizeObserver.disconnect();
+    };
   }, []);
 
+  // Socket event handlers
   useEffect(() => {
-    if (!contextRef.current) return;
-    contextRef.current.strokeStyle = color;
-    contextRef.current.lineWidth = brushSize;
-  }, [color, brushSize]);
+    socket.on('draw_line', (data: {
+      from: Point;
+      to: Point;
+      color: string;
+      brushSize: number;
+    }) => {
+      drawLine(data.from, data.to, data.color, data.brushSize);
+    });
 
-  useEffect(() => {
-    if (!isDrawing) {
-      // Listen for drawing data from other players
-      socket.on('draw_line', (data: any) => {
-        const context = contextRef.current;
-        if (!context) return;
-
-        context.beginPath();
-        context.moveTo(data.from.x, data.from.y);
-        context.lineTo(data.to.x, data.to.y);
-        context.strokeStyle = data.color;
-        context.lineWidth = data.brushSize;
-        context.stroke();
-      });
-
-      socket.on('clear_canvas', () => {
-        const context = contextRef.current;
-        const canvas = canvasRef.current;
-        if (!context || !canvas) return;
-        context.clearRect(0, 0, canvas.width, canvas.height);
-      });
-    }
+    socket.on('clear_canvas', () => {
+      clearCanvas();
+    });
 
     return () => {
       socket.off('draw_line');
       socket.off('clear_canvas');
     };
-  }, [isDrawing, socket]);
+  }, [socket]);
 
-  const startDrawing = ({ nativeEvent }: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const { offsetX, offsetY } = nativeEvent;
-    contextRef.current?.beginPath();
-    contextRef.current?.moveTo(offsetX, offsetY);
-    setIsDrawingMode(true);
-  };
+  const drawLine = (from: Point, to: Point, color: string, brushSize: number) => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!context || !canvas) return;
 
-  const draw = ({ nativeEvent }: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawingMode || !isDrawing) return;
-    const { offsetX, offsetY } = nativeEvent;
-    
-    if (contextRef.current) {
-      contextRef.current.lineTo(offsetX, offsetY);
-      contextRef.current.stroke();
-    }
-
-    // Emit drawing data to other players
-    socket.emit('draw', {
-      lobbyId,
-      from: { x: offsetX, y: offsetY },
-      to: { x: offsetX, y: offsetY },
-      color,
-      brushSize
-    });
-  };
-
-  const stopDrawing = () => {
-    if (!isDrawing) return;
-    contextRef.current?.closePath();
-    setIsDrawingMode(false);
+    context.beginPath();
+    context.strokeStyle = color;
+    context.lineWidth = brushSize;
+    context.moveTo(from.x, from.y);
+    context.lineTo(to.x, to.y);
+    context.stroke();
   };
 
   const clearCanvas = () => {
-    if (!isDrawing) return;
     const canvas = canvasRef.current;
-    const context = contextRef.current;
-    if (!canvas || !context) return;
-    
+    const context = canvas?.getContext('2d');
+    if (!context || !canvas) return;
+
     context.clearRect(0, 0, canvas.width, canvas.height);
-    socket.emit('clear_canvas', { lobbyId });
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!isDrawing) return;
+    
+    const point = {
+      x: e.nativeEvent.offsetX,
+      y: e.nativeEvent.offsetY
+    };
+    
+    setIsDrawingActive(true);
+    setLastPoint(point);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDrawing || !isDrawingActive || !lastPoint) return;
+
+    const newPoint = {
+      x: e.nativeEvent.offsetX,
+      y: e.nativeEvent.offsetY
+    };
+
+    drawLine(lastPoint, newPoint, tools.color, tools.brushSize);
+    socket.emit('draw', {
+      lobbyId,
+      from: lastPoint,
+      to: newPoint,
+      color: tools.color,
+      brushSize: tools.brushSize
+    });
+
+    setLastPoint(newPoint);
+  };
+
+  const handlePointerUp = () => {
+    setIsDrawingActive(false);
+    setLastPoint(null);
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="flex gap-4 mb-4">
-        <input
-          type="color"
-          value={color}
-          onChange={(e) => setColor(e.target.value)}
-          disabled={!isDrawing}
-          className="w-10 h-10"
+    <div 
+      ref={containerRef} 
+      className="w-full h-full flex flex-col items-center"
+    >
+      {/* Canvas Area */}
+      <div className="relative bg-white rounded-t-lg overflow-hidden flex-1">
+        <canvas
+          ref={canvasRef}
+          className="touch-none"
+          style={{
+            width: dimensions.width,
+            height: dimensions.height
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerOut={handlePointerUp}
         />
-        <input
-          type="range"
-          min="1"
-          max="20"
-          value={brushSize}
-          onChange={(e) => setBrushSize(parseInt(e.target.value))}
-          disabled={!isDrawing}
-          className="w-32"
-        />
-        <button
-          onClick={clearCanvas}
-          disabled={!isDrawing}
-          className="px-4 py-2 bg-red-500 text-white rounded disabled:opacity-50"
-        >
-          Clear
-        </button>
+        {!isDrawing && (
+          <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
+            <span className="text-gray-800 text-lg font-valorant">
+              Waiting for drawer...
+            </span>
+          </div>
+        )}
       </div>
-      <canvas
-        ref={canvasRef}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
-        className={`border-2 ${
-          isDrawing ? 'border-blue-500 cursor-crosshair' : 'border-gray-300 cursor-default'
-        } rounded-lg`}
-      />
+
+      {/* Drawing Tools */}
+      {isDrawing && (
+        <div className="flex items-center justify-between p-2 bg-gray-200 rounded-b-lg">
+          <div className="grid grid-cols-9 gap-1 border p-1 rounded">
+            {COLOR_PRESETS.map((color) => (
+              <button
+                key={color.value}
+                onClick={() => setTools(prev => ({ ...prev, color: color.value }))}
+                className={`w-5 h-5 rounded-full transition-all ${
+                  tools.color === color.value 
+                    ? 'ring-2 ring-[#FF4655] scale-110' 
+                    : 'hover:scale-105'
+                }`}
+                style={{ backgroundColor: color.value }}
+                title={color.name}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTools(prev => ({ ...prev, isEraser: !prev.isEraser }))}
+              className={`p-2 rounded transition-colors ${
+                tools.isEraser 
+                  ? 'bg-[#FF4655] text-white' 
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {tools.isEraser ? 'Eraser' : 'Brush'}
+            </button>
+            <button
+              onClick={() => {
+                clearCanvas();
+                socket.emit('clear_canvas', { lobbyId });
+              }}
+              className="p-2 rounded bg-red-500 text-white hover:bg-red-600"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

@@ -23,6 +23,13 @@ interface GameInterfaceProps {
   initialLobbyId?: string;
 }
 
+// First, add an interface for the response type
+interface JoinLobbyResponse {
+  success: boolean;
+  message?: string;
+  lobbyId?: string;
+}
+
 export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameState, setGameState] = useState<GameState>(initialLobbyId ? 'game' : 'menu');
@@ -78,9 +85,9 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
         }
       });
 
-      socketInstance.on('join_lobby_response', (response: { success: boolean, message?: string }) => {
+      socketInstance.on('join_lobby_response', (response: JoinLobbyResponse) => {
         console.log('Join lobby response:', response);
-        if (response.success) {
+        if (response.success && response.lobbyId) {
           setLobbyId(response.lobbyId);
           setGameState('game');
           router.replace(`/lobby/${response.lobbyId}`);

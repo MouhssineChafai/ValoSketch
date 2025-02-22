@@ -1,6 +1,10 @@
 'use client';
 
-export default function VideoBackground() {
+interface VideoBackgroundProps {
+  gameState?: 'menu' | 'lobby' | 'game';
+}
+
+export default function VideoBackground({ gameState = 'menu' }: VideoBackgroundProps) {
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden">
       <video
