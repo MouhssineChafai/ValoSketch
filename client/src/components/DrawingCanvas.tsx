@@ -73,6 +73,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const [lastPoint, setLastPoint] = useState<Point | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [currentTool, setCurrentTool] = useState<string>('Brush');
+  const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
 
   // Handle canvas resize
   useEffect(() => {
@@ -203,6 +204,33 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const handlePointerUp = () => {
     setIsDrawingActive(false);
     setLastPoint(null);
+    if (isDrawing) {
+      saveDrawState();
+    }
+  };
+
+  const saveDrawState = () => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!context || !canvas) return;
+    
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    setDrawHistory(prev => [...prev, imageData]);
+  };
+
+  const handleUndo = () => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!context || !canvas || drawHistory.length === 0) return;
+
+    if (drawHistory.length > 1) {
+      const previousState = drawHistory[drawHistory.length - 2];
+      context.putImageData(previousState, 0, 0);
+      setDrawHistory(prev => prev.slice(0, -1));
+      socket.emit('canvas_state', { lobbyId, imageData: previousState });
+    } else {
+      clearCanvas();
+    }
   };
 
   return (
@@ -283,15 +311,33 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
           {/* Other Controls */}
           <div className="flex items-center gap-2 ml-auto">
             <button
+              onClick={handleUndo}
+              className="p-2 rounded-md bg-[#d3b8b8] hover:bg-[#eaa2a2] 
+                transition-colors shadow-lg border-2 border-transparent
+                hover:border-white/20"
+              title="Undo"
+            >
+              <img 
+                src="/icons8-undo-90.png" 
+                alt="Undo"
+                className="w-8 h-8 brightness-75 hover:brightness-100"
+              />
+            </button>
+            <button
               onClick={() => {
                 clearCanvas();
                 socket.emit('clear_canvas', { lobbyId });
               }}
-              className="px-4 py-2 rounded-md bg-[#FF4655] text-white hover:bg-[#FF5865] 
-                transition-colors font-medium shadow-lg border-2 border-transparent
+              className="p-2 rounded-md bg-[#d3b8b8] hover:bg-[#eaa2a2]
+                transition-colors shadow-lg border-2 border-transparent
                 hover:border-white/20"
+              title="Clear All"
             >
-              Clear Canvas
+              <img 
+                src="/icons8-trash-90.png" 
+                alt="Clear All"
+                className="w-8 h-8 brightness-75 hover:brightness-100"
+              />
             </button>
           </div>
         </div>
