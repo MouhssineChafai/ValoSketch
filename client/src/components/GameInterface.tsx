@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import Lobby from './Lobby';
 import Game from './Game';
@@ -25,11 +25,12 @@ interface GameInterfaceProps {
 
 export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [gameState, setGameState] = useState<GameState>('menu');
+  const [gameState, setGameState] = useState<GameState>(initialLobbyId ? 'game' : 'menu');
   const [lobbyId, setLobbyId] = useState<string>(initialLobbyId || '');
   const [error, setError] = useState('');
   const router = useRouter();
   const [username, setUsername] = useState('');
+  const [isVerifying, setIsVerifying] = useState(!!initialLobbyId);
 
   // Auto-hide error after 5 seconds
   useEffect(() => {
@@ -41,11 +42,27 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
     }
   }, [error]);
 
+  // Handle initial lobby verification
   useEffect(() => {
-    if (initialLobbyId) {
-      socket?.emit('verify_lobby', initialLobbyId);
+    if (initialLobbyId && socket?.connected) {
+      setIsVerifying(true);
+      socket.emit('verify_lobby', initialLobbyId);
     }
-  }, [initialLobbyId, socket]);
+  }, [initialLobbyId, socket?.connected]);
+
+  // Create a navigation handler
+  const handleNavigation = useCallback((newLobbyId: string) => {
+    console.log('Navigating to lobby:', newLobbyId);
+    
+    // Update state first
+    setLobbyId(newLobbyId);
+    setGameState('game');
+    
+    // Use window.history for immediate URL update
+    const newUrl = `/lobby/${newLobbyId}`;
+    window.history.replaceState({}, '', newUrl);
+    console.log('URL updated to:', window.location.pathname);
+  }, []);
 
   useEffect(() => {
     let socketInstance: Socket | null = null;
@@ -62,11 +79,16 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
       socketInstance.on('connect', () => {
         console.log('Connected to server');
         setError('');
+        // Verify lobby when socket connects if we have an initial lobby ID
+        if (initialLobbyId) {
+          socketInstance?.emit('verify_lobby', initialLobbyId);
+        }
       });
 
       socketInstance.on('lobby_verified', (exists: boolean) => {
+        setIsVerifying(false);
         if (exists) {
-          setGameState('lobby');
+          setGameState('game');
         } else {
           setError('Lobby not found');
           router.replace('/');
@@ -90,8 +112,8 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
       });
 
       socketInstance.on('lobby_created', (newLobbyId: string) => {
-        setGameState('transitioning');
-        router.push(`/lobby/${newLobbyId}`);
+        console.log('Lobby created, received ID:', newLobbyId);
+        handleNavigation(newLobbyId);
       });
 
       setSocket(socketInstance);
@@ -105,16 +127,41 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
         socketInstance.disconnect();
       }
     };
-  }, []);
+  }, [handleNavigation]);
 
+  // Split the create lobby logic into two functions
   const handleCreateLobby = () => {
     if (!username) {
       setError('Please enter a username');
       return;
     }
+    if (!socket?.connected) {
+      setError('Not connected to server');
+      return;
+    }
+    // Generate lobby ID when transitioning to lobby screen
     const newLobbyId = generateLobbyId();
     setLobbyId(newLobbyId);
+    // Navigate to lobby configuration screen
     setGameState('lobby');
+  };
+
+  // Handle lobby creation
+  const handleLobbyCreation = (settings: any) => {
+    if (!socket?.connected) {
+      setError('Not connected to server');
+      return;
+    }
+    
+    // Emit create_lobby and let the server handle it
+    socket.emit('create_lobby', {
+      settings,
+      username,
+      lobbyId
+    });
+
+    // Navigate immediately after emitting
+    router.push(`/lobby/${lobbyId}`);
   };
 
   const handleJoinLobby = () => {
@@ -137,6 +184,16 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
     }
   };
 
+  // Show loading state while verifying lobby
+  if (isVerifying) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white">
+        <VideoBackground />
+        <div className="text-lg">Verifying lobby...</div>
+      </div>
+    );
+  }
+
   if (!socket) {
     return (
       <div className="min-h-screen flex items-center justify-center text-white">
@@ -152,15 +209,13 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
         <VideoBackground 
           gameState={gameState} 
           onTransitionComplete={() => {
-            if (gameState === 'transitioning') {
-              setGameState('game');
-            }
+            setGameState('game');
           }} 
         />
         
         {gameState === 'menu' ? (
           <Menu
-            onCreateLobby={handleCreateLobby}
+            onCreateLobby={handleCreateLobby}  // No parameters needed here
             onJoinLobby={(code: string) => {
               setLobbyId(code);
             }}
@@ -175,13 +230,7 @@ export default function GameInterface({ initialLobbyId }: GameInterfaceProps) {
               lobbyId={lobbyId}
               username={username}
               socket={socket}
-              onCreateLobby={(settings) => {
-                socket?.emit('create_lobby', {
-                  settings,
-                  username,
-                  lobbyId
-                });
-              }}
+              onCreateLobby={handleLobbyCreation}  // This one handles the settings
               onExit={handleExit}
               onGameStart={handleGameStart}
             />

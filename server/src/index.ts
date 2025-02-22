@@ -161,8 +161,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('verify_lobby', async (lobbyId: string) => {
-    const exists = await lobbyExists(lobbyId);
-    socket.emit('lobby_verified', exists);
+    try {
+      const lobby = await getLobby(lobbyId);
+      
+      if (lobby) {
+        // Lobby exists
+        socket.emit('lobby_verified', true);
+      } else {
+        // Lobby doesn't exist
+        socket.emit('lobby_verified', false);
+      }
+    } catch (error) {
+      console.error('Error verifying lobby:', error);
+      socket.emit('lobby_verified', false);
+    }
   });
 });
 
