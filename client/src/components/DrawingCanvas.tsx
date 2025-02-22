@@ -48,6 +48,18 @@ const COLOR_PRESETS: ColorPreset[] = [
   { name: 'Olive', value: '#808000' }
 ];
 
+// Add new interface for drawing tools
+interface DrawingTool {
+  name: string;
+  icon: string;
+}
+
+const DRAWING_TOOLS: DrawingTool[] = [
+  { name: 'Brush', icon: '/icons8-pencil-100.png' },
+  { name: 'Eraser', icon: '/icons8-eraser-100.png' },
+  { name: 'Fill', icon: '/icons8-fill-color-90.png' }
+];
+
 export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,6 +72,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const [isDrawingActive, setIsDrawingActive] = useState(false);
   const [lastPoint, setLastPoint] = useState<Point | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [currentTool, setCurrentTool] = useState<string>('Brush');
 
   // Handle canvas resize
   useEffect(() => {
@@ -195,10 +208,10 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-full flex flex-col items-center"
+      className="w-full h-full flex flex-col"
     >
       {/* Canvas Area */}
-      <div className="relative bg-white rounded-t-lg overflow-hidden flex-1">
+      <div className="relative bg-white rounded-t-lg overflow-hidden">
         <canvas
           ref={canvasRef}
           className="touch-none"
@@ -222,41 +235,63 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
 
       {/* Drawing Tools */}
       {isDrawing && (
-        <div className="flex items-center justify-between p-2 bg-gray-200 rounded-b-lg">
-          <div className="grid grid-cols-9 gap-1 border p-1 rounded">
+        <div className="w-full rounded-b-lg p-3 flex items-center gap-4">
+          {/* Color Presets */}
+          <div className="grid grid-rows-2 grid-flow-col gap-2 p-2">
             {COLOR_PRESETS.map((color) => (
               <button
                 key={color.value}
                 onClick={() => setTools(prev => ({ ...prev, color: color.value }))}
-                className={`w-5 h-5 rounded-full transition-all ${
+                className={`w-6 h-6 rounded-full transition-all shadow-sm ${
                   tools.color === color.value 
-                    ? 'ring-2 ring-[#FF4655] scale-110' 
-                    : 'hover:scale-105'
+                    ? 'ring-2 ring-[#FF4655] ring-offset-2 ring-offset-[#0F1923] scale-110' 
+                    : 'hover:scale-105 hover:ring-1 hover:ring-white/30'
                 }`}
                 style={{ backgroundColor: color.value }}
                 title={color.name}
               />
             ))}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setTools(prev => ({ ...prev, isEraser: !prev.isEraser }))}
-              className={`p-2 rounded transition-colors ${
-                tools.isEraser 
-                  ? 'bg-[#FF4655] text-white' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              {tools.isEraser ? 'Eraser' : 'Brush'}
-            </button>
+
+          {/* Drawing Tools Box */}
+          <div className="flex gap-2 p-3 h-[74px] rounded-lg border-2 border-[#1e2129]">
+            {DRAWING_TOOLS.map((tool) => (
+              <button
+                key={tool.name}
+                onClick={() => setCurrentTool(tool.name)}
+                className={`p-2 rounded-md transition-all
+                  ${currentTool === tool.name
+                    ? 'bg-[#FF4655] text-white shadow-lg'
+                    : 'bg-[#d3b8b8] text-gray-300 hover:bg-[#eaa2a2] hover:text-white'
+                  }
+                `}
+                title={tool.name}
+              >
+                <img 
+                  src={tool.icon} 
+                  alt={tool.name}
+                  className={`w-8 h-8 ${
+                    currentTool === tool.name 
+                      ? 'brightness-200' 
+                      : 'brightness-75 hover:brightness-100'
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
+
+          {/* Other Controls */}
+          <div className="flex items-center gap-2 ml-auto">
             <button
               onClick={() => {
                 clearCanvas();
                 socket.emit('clear_canvas', { lobbyId });
               }}
-              className="p-2 rounded bg-red-500 text-white hover:bg-red-600"
+              className="px-4 py-2 rounded-md bg-[#FF4655] text-white hover:bg-[#FF5865] 
+                transition-colors font-medium shadow-lg border-2 border-transparent
+                hover:border-white/20"
             >
-              Clear
+              Clear Canvas
             </button>
           </div>
         </div>

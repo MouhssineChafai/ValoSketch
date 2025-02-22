@@ -56,7 +56,7 @@ export default function Game({ socket, lobbyId, username }: GameProps) {
           <div className="text-xl">Word: {currentWord}</div>
         </div>
         
-        <div className="flex-1 bg-gray-800/50 rounded-lg overflow-hidden">
+        <div className="flex-1 bg-gray-800/50 rounded-lg p-4">
           <DrawingCanvas 
             socket={socket}
             lobbyId={lobbyId}
