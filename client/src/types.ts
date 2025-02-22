@@ -1,0 +1,1 @@
+export type GameState = 'menu' | 'lobby' | 'game'; 
