@@ -289,8 +289,8 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
                 onClick={() => setCurrentTool(tool.name)}
                 className={`p-2 rounded-md transition-all
                   ${currentTool === tool.name
-                    ? 'bg-[#FF4655] text-white shadow-lg'
-                    : 'bg-[#d3b8b8] text-gray-300 hover:bg-[#eaa2a2] hover:text-white'
+                    ? 'bg-[#6a85c0] text-white shadow-lg'
+                    : 'bg-[#d4d7df] text-gray-300 hover:bg-[#acafb5] hover:text-white'
                   }
                 `}
                 title={tool.name}
@@ -312,7 +312,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
           <div className="flex items-center gap-2 ml-auto">
             <button
               onClick={handleUndo}
-              className="p-2 rounded-md bg-[#d3b8b8] hover:bg-[#eaa2a2] 
+              className="p-2 rounded-md bg-[#f1c329] hover:bg-[#bda248] 
                 transition-colors shadow-lg border-2 border-transparent
                 hover:border-white/20"
               title="Undo"
@@ -328,13 +328,13 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
                 clearCanvas();
                 socket.emit('clear_canvas', { lobbyId });
               }}
-              className="p-2 rounded-md bg-[#d3b8b8] hover:bg-[#eaa2a2]
+              className="p-2 rounded-md bg-[#dc4d4d] hover:bg-[#bc7373]
                 transition-colors shadow-lg border-2 border-transparent
                 hover:border-white/20"
               title="Clear All"
             >
               <img 
-                src="/icons8-trash-90.png" 
+                src="/icons8-remove-90.png" 
                 alt="Clear All"
                 className="w-8 h-8 brightness-75 hover:brightness-100"
               />
