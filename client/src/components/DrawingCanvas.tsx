@@ -56,8 +56,9 @@ interface DrawingTool {
 
 const DRAWING_TOOLS: DrawingTool[] = [
   { name: 'Brush', icon: '/icons8-pencil-100.png' },
-  { name: 'Eraser', icon: '/icons8-eraser-100.png' },
-  { name: 'Fill', icon: '/icons8-fill-color-90.png' }
+  { name: 'Fill', icon: '/icons8-fill-color-90.png' },
+  { name: 'Eraser', icon: '/icons8-eraser-100.png' }
+
 ];
 
 export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCanvasProps) {
@@ -65,7 +66,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const containerRef = useRef<HTMLDivElement>(null);
   const [tools, setTools] = useState<DrawingTools>({
     color: '#000000',
-    brushSize: 5,
+    brushSize: 6,
     isEraser: false,
     opacity: 1
   });
@@ -74,6 +75,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [currentTool, setCurrentTool] = useState<string>('Brush');
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
+  const [brushSize, setBrushSize] = useState(6);
 
   // Handle canvas resize
   useEffect(() => {
@@ -138,12 +140,28 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       drawLine(data.from, data.to, data.color, data.brushSize);
     });
 
+    socket.on('draw_dot', (data: {
+      point: Point;
+      color: string;
+      brushSize: number;
+    }) => {
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext('2d');
+      if (context && canvas) {
+        context.beginPath();
+        context.fillStyle = data.color;
+        context.arc(data.point.x, data.point.y, data.brushSize / 2, 0, Math.PI * 2);
+        context.fill();
+      }
+    });
+
     socket.on('clear_canvas', () => {
       clearCanvas();
     });
 
     return () => {
       socket.off('draw_line');
+      socket.off('draw_dot');
       socket.off('clear_canvas');
     };
   }, [socket]);
@@ -177,28 +195,61 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       y: e.nativeEvent.offsetY
     };
     
+    // Draw a dot at the click point
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (context && canvas) {
+      context.beginPath();
+      context.fillStyle = tools.color;
+      context.arc(point.x, point.y, tools.brushSize / 2, 0, Math.PI * 2);
+      context.fill();
+
+      // Emit the dot to other users
+      socket.emit('draw_dot', {
+        lobbyId,
+        point,
+        color: tools.color,
+        brushSize: tools.brushSize
+      });
+    }
+    
     setIsDrawingActive(true);
     setLastPoint(point);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDrawing || !isDrawingActive || !lastPoint) return;
+    if (!isDrawing) return;
+
+    // Only draw if the primary button is pressed (1 for left click)
+    if (!e.buttons) {
+      setIsDrawingActive(false);
+      setLastPoint(null);
+      return;
+    }
 
     const newPoint = {
       x: e.nativeEvent.offsetX,
       y: e.nativeEvent.offsetY
     };
 
-    drawLine(lastPoint, newPoint, tools.color, tools.brushSize);
-    socket.emit('draw', {
-      lobbyId,
-      from: lastPoint,
-      to: newPoint,
-      color: tools.color,
-      brushSize: tools.brushSize
-    });
+    // If we're drawing but don't have a last point (e.g., re-entering canvas)
+    // just set the last point and return
+    if (isDrawingActive && !lastPoint) {
+      setLastPoint(newPoint);
+      return;
+    }
 
-    setLastPoint(newPoint);
+    if (isDrawingActive && lastPoint) {
+      drawLine(lastPoint, newPoint, tools.color, tools.brushSize);
+      socket.emit('draw', {
+        lobbyId,
+        from: lastPoint,
+        to: newPoint,
+        color: tools.color,
+        brushSize: tools.brushSize
+      });
+      setLastPoint(newPoint);
+    }
   };
 
   const handlePointerUp = () => {
@@ -206,6 +257,12 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     setLastPoint(null);
     if (isDrawing) {
       saveDrawState();
+    }
+  };
+
+  const handlePointerLeave = () => {
+    if (isDrawingActive) {
+      setLastPoint(null); // Clear the last point when leaving
     }
   };
 
@@ -233,6 +290,31 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     }
   };
 
+  // Add cursor style management
+  const getCursorStyle = (isDrawing: boolean, currentTool: string, size: number, color: string) => {
+    if (!isDrawing) return 'default';
+    if (currentTool === 'Eraser') return 'crosshair';
+    if (currentTool === 'Fill') return 'crosshair';
+    return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="none" stroke="${encodeURIComponent(color)}" stroke-width="1"/></svg>') ${size/2} ${size/2}, auto`;
+  };
+
+  // Add a useEffect to handle window-wide pointer up
+  useEffect(() => {
+    const handleWindowPointerUp = () => {
+      setIsDrawingActive(false);
+      setLastPoint(null);
+      if (isDrawing) {
+        saveDrawState();
+      }
+    };
+
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    
+    return () => {
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+    };
+  }, [isDrawing]);
+
   return (
     <div 
       ref={containerRef} 
@@ -245,12 +327,13 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
           className="touch-none"
           style={{
             width: dimensions.width,
-            height: dimensions.height
+            height: dimensions.height,
+            cursor: getCursorStyle(isDrawing, currentTool, brushSize * 2, tools.color)
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onPointerOut={handlePointerUp}
+          onPointerLeave={handlePointerLeave}
         />
         {!isDrawing && (
           <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
@@ -289,7 +372,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
                 onClick={() => setCurrentTool(tool.name)}
                 className={`p-2 rounded-md transition-all
                   ${currentTool === tool.name
-                    ? 'bg-[#6a85c0] text-white shadow-lg'
+                    ? 'bg-[#7b90b7] text-white shadow-lg'
                     : 'bg-[#d4d7df] text-gray-300 hover:bg-[#acafb5] hover:text-white'
                   }
                 `}
@@ -306,6 +389,24 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
                 />
               </button>
             ))}
+          </div>
+
+          {/* Brush Size Slider */}
+          <div className="flex items-center gap-2 p-2 h-[74px] rounded-lg border-2 border-[#1e2129] bg-[#d4d7df]">
+            <span className="text-sm text-gray-700 font-medium">Size:</span>
+            <input
+              type="range"
+              min="1"
+              max="50"
+              value={brushSize}
+              onChange={(e) => {
+                const newSize = parseInt(e.target.value);
+                setBrushSize(newSize);
+                setTools(prev => ({ ...prev, brushSize: newSize }));
+              }}
+              className="w-32 accent-[#6a85c0]"
+            />
+            <span className="text-sm text-gray-700 font-medium w-8">{brushSize}</span>
           </div>
 
           {/* Other Controls */}
