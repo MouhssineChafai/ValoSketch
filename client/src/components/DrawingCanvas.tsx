@@ -76,6 +76,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const [currentTool, setCurrentTool] = useState<string>('Brush');
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [brushSize, setBrushSize] = useState(6);
+  const [isAdjustingSize, setIsAdjustingSize] = useState(false);
 
   // Handle canvas resize
   useEffect(() => {
@@ -479,21 +480,53 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
           </div>
 
           {/* Brush Size Slider */}
-          <div className="flex items-center gap-2 p-2 h-[74px] rounded-lg border-2 border-[#1e2129] bg-[#d4d7df]">
-            <span className="text-sm text-gray-700 font-medium">Size:</span>
-            <input
-              type="range"
-              min="1"
-              max="50"
-              value={brushSize}
-              onChange={(e) => {
-                const newSize = parseInt(e.target.value);
-                setBrushSize(newSize);
-                setTools(prev => ({ ...prev, brushSize: newSize }));
-              }}
-              className="w-32 accent-[#6a85c0]"
-            />
-            <span className="text-sm text-gray-700 font-medium w-8">{brushSize}</span>
+          <div className="flex items-center gap-2 p-2 pr-3 h-[74px] rounded-lg border-2 border-[#1e2129]">
+            <div className="relative flex items-center w-48">
+              {/* Static size preview shape */}
+              <div className="absolute w-full h-6 pointer-events-none">
+                <div 
+                  className="w-full h-full"
+                  style={{
+                    background: '#d4d7df',
+                    clipPath: 'polygon(0 50%, 100% 0, 100% 50%, 100% 100%)'
+                  }}
+                />
+              </div>
+              
+              {/* Blue selector */}
+              <div 
+                className="absolute h-7 bg-[#7b90b7] pointer-events-none"
+                style={{
+                  borderRadius: '10px',
+                  width: '10px',
+                  left: `${(brushSize / 50) * 100}%`,
+                  transform: 'translateX(-50%)',
+                  zIndex: 20
+                }}
+              />
+              
+              {/* Actual slider input */}
+              <input
+                type="range"
+                min="1"
+                max="50"
+                value={brushSize}
+                onChange={(e) => {
+                  const newSize = parseInt(e.target.value);
+                  setBrushSize(newSize);
+                  setTools(prev => ({ ...prev, brushSize: newSize }));
+                }}
+                className="w-full h-6 appearance-none bg-transparent relative z-10 outline-none
+                  [&::-webkit-slider-thumb]:appearance-none
+                  [&::-webkit-slider-thumb]:w-0
+                  [&::-webkit-slider-thumb]:h-0
+                  
+                  [&::-moz-range-thumb]:appearance-none
+                  [&::-moz-range-thumb]:w-0
+                  [&::-moz-range-thumb]:h-0
+                  [&::-moz-range-thumb]:border-0"
+              />
+            </div>
           </div>
 
           {/* Other Controls */}
