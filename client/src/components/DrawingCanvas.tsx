@@ -159,10 +159,23 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       clearCanvas();
     });
 
+    socket.on('fill', (data: {
+      point: Point;
+      color: string;
+    }) => {
+      const scale = window.devicePixelRatio;
+      floodFill(
+        Math.floor(data.point.x * scale), 
+        Math.floor(data.point.y * scale), 
+        data.color
+      );
+    });
+
     return () => {
       socket.off('draw_line');
       socket.off('draw_dot');
       socket.off('clear_canvas');
+      socket.off('fill');
     };
   }, [socket]);
 
@@ -194,6 +207,25 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       x: e.nativeEvent.offsetX,
       y: e.nativeEvent.offsetY
     };
+
+    if (currentTool === 'Fill') {
+      const scale = window.devicePixelRatio;
+      floodFill(
+        Math.floor(point.x * scale), 
+        Math.floor(point.y * scale), 
+        tools.color
+      );
+      
+      // Emit fill action to other users
+      socket.emit('fill', {
+        lobbyId,
+        point,
+        color: tools.color
+      });
+      
+      saveDrawState();
+      return;
+    }
     
     // Draw a dot at the click point
     const canvas = canvasRef.current;
@@ -290,11 +322,14 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     }
   };
 
-  // Add cursor style management
+  // Update getCursorStyle to keep fill cursor black
   const getCursorStyle = (isDrawing: boolean, currentTool: string, size: number, color: string) => {
     if (!isDrawing) return 'default';
     if (currentTool === 'Eraser') return 'crosshair';
-    if (currentTool === 'Fill') return 'crosshair';
+    if (currentTool === 'Fill') {
+      // Create a smaller fill cursor using SVG with fixed black color
+      return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M16.56 8.94L7.62 0L6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="black"/></svg>') 0 20, auto`;
+    }
     return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="none" stroke="${encodeURIComponent(color)}" stroke-width="1"/></svg>') ${size/2} ${size/2}, auto`;
   };
 
@@ -314,6 +349,59 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       window.removeEventListener('pointerup', handleWindowPointerUp);
     };
   }, [isDrawing]);
+
+  // Add flood fill function
+  const floodFill = (startX: number, startY: number, fillColor: string) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !canvas) return;
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+
+    // Get the color we're trying to replace
+    const startPos = (startY * canvas.width + startX) * 4;
+    const startR = pixels[startPos];
+    const startG = pixels[startPos + 1];
+    const startB = pixels[startPos + 2];
+    const startA = pixels[startPos + 3];
+
+    // Convert fill color from hex to RGBA
+    const fillRGB = {
+      r: parseInt(fillColor.slice(1, 3), 16),
+      g: parseInt(fillColor.slice(3, 5), 16),
+      b: parseInt(fillColor.slice(5, 7), 16),
+      a: 255
+    };
+
+    // Don't fill if clicking the same color
+    if (startR === fillRGB.r && 
+        startG === fillRGB.g && 
+        startB === fillRGB.b && 
+        startA === fillRGB.a) return;
+
+    // Flood fill algorithm
+    const pixelsToCheck = [[startX, startY]];
+    while (pixelsToCheck.length > 0) {
+      const [x, y] = pixelsToCheck.pop()!;
+      const pos = (y * canvas.width + x) * 4;
+
+      if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) continue;
+      if (pixels[pos] !== startR || 
+          pixels[pos + 1] !== startG || 
+          pixels[pos + 2] !== startB || 
+          pixels[pos + 3] !== startA) continue;
+
+      pixels[pos] = fillRGB.r;
+      pixels[pos + 1] = fillRGB.g;
+      pixels[pos + 2] = fillRGB.b;
+      pixels[pos + 3] = fillRGB.a;
+
+      pixelsToCheck.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  };
 
   return (
     <div 
