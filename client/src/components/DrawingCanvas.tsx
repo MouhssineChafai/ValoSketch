@@ -179,13 +179,13 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     };
   }, [socket]);
 
-  const drawLine = (from: Point, to: Point, color: string, brushSize: number) => {
+  const drawLine = (from: Point, to: Point, color: string, brushSize: number, isEraser: boolean = false) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!context || !canvas) return;
 
     context.beginPath();
-    context.strokeStyle = color;
+    context.strokeStyle = isEraser ? '#FFFFFF' : color;
     context.lineWidth = brushSize;
     context.moveTo(from.x, from.y);
     context.lineTo(to.x, to.y);
@@ -225,24 +225,23 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       
       saveDrawState();
       return;
-    }
-    
-    // Draw a dot at the click point
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    if (context && canvas) {
-      context.beginPath();
-      context.fillStyle = tools.color;
-      context.arc(point.x, point.y, tools.brushSize / 2, 0, Math.PI * 2);
-      context.fill();
+    } else {
+      const isEraser = currentTool === 'Eraser';
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext('2d');
+      if (context && canvas) {
+        context.beginPath();
+        context.fillStyle = isEraser ? '#FFFFFF' : tools.color;
+        context.arc(point.x, point.y, tools.brushSize / 2, 0, Math.PI * 2);
+        context.fill();
 
-      // Emit the dot to other users
-      socket.emit('draw_dot', {
-        lobbyId,
-        point,
-        color: tools.color,
-        brushSize: tools.brushSize
-      });
+        socket.emit('draw_dot', {
+          lobbyId,
+          point,
+          color: isEraser ? '#FFFFFF' : tools.color,
+          brushSize: tools.brushSize
+        });
+      }
     }
     
     setIsDrawingActive(true);
@@ -252,7 +251,6 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDrawing) return;
 
-    // Only draw if the primary button is pressed (1 for left click)
     if (!e.buttons) {
       setIsDrawingActive(false);
       setLastPoint(null);
@@ -264,20 +262,19 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       y: e.nativeEvent.offsetY
     };
 
-    // If we're drawing but don't have a last point (e.g., re-entering canvas)
-    // just set the last point and return
     if (isDrawingActive && !lastPoint) {
       setLastPoint(newPoint);
       return;
     }
 
     if (isDrawingActive && lastPoint) {
-      drawLine(lastPoint, newPoint, tools.color, tools.brushSize);
+      const isEraser = currentTool === 'Eraser';
+      drawLine(lastPoint, newPoint, tools.color, tools.brushSize, isEraser);
       socket.emit('draw', {
         lobbyId,
         from: lastPoint,
         to: newPoint,
-        color: tools.color,
+        color: isEraser ? '#FFFFFF' : tools.color,
         brushSize: tools.brushSize
       });
       setLastPoint(newPoint);
@@ -322,15 +319,14 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     }
   };
 
-  // Update getCursorStyle to keep fill cursor black
+  // Update getCursorStyle to show brush cursor for eraser in white
   const getCursorStyle = (isDrawing: boolean, currentTool: string, size: number, color: string) => {
     if (!isDrawing) return 'default';
-    if (currentTool === 'Eraser') return 'crosshair';
     if (currentTool === 'Fill') {
-      // Create a smaller fill cursor using SVG with fixed black color
       return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M16.56 8.94L7.62 0L6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="black"/></svg>') 0 20, auto`;
     }
-    return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="none" stroke="${encodeURIComponent(color)}" stroke-width="1"/></svg>') ${size/2} ${size/2}, auto`;
+    // Use white cursor for eraser, otherwise use selected color
+    return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="none" stroke="${currentTool === 'Eraser' ? 'white' : encodeURIComponent(color)}" stroke-width="1"/></svg>') ${size/2} ${size/2}, auto`;
   };
 
   // Add a useEffect to handle window-wide pointer up
@@ -440,7 +436,10 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
             {COLOR_PRESETS.map((color) => (
               <button
                 key={color.value}
-                onClick={() => setTools(prev => ({ ...prev, color: color.value }))}
+                onClick={() => {
+                  setTools(prev => ({ ...prev, color: color.value }));
+                  setCurrentTool('Brush'); // Switch to brush when picking a color
+                }}
                 className={`w-6 h-6 rounded-full transition-all shadow-sm ${
                   tools.color === color.value 
                     ? 'ring-2 ring-[#FF4655] ring-offset-2 ring-offset-[#0F1923] scale-110' 
