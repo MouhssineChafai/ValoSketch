@@ -497,7 +497,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
               <div 
                 className="absolute h-7 bg-[#7b90b7] pointer-events-none"
                 style={{
-                  borderRadius: '10px',
+                  borderRadius: '4px',
                   width: '10px',
                   left: `${(brushSize / 50) * 100}%`,
                   transform: 'translateX(-50%)',
