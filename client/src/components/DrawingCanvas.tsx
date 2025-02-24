@@ -17,8 +17,6 @@ interface Point {
 interface DrawingTools {
   color: string;
   brushSize: number;
-  isEraser: boolean;
-  opacity: number;
 }
 
 interface ColorPreset {
@@ -61,14 +59,14 @@ const DRAWING_TOOLS: DrawingTool[] = [
 
 ];
 
+const MAX_HISTORY_LENGTH = 50; // Limit history to 50 states
+
 export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [tools, setTools] = useState<DrawingTools>({
     color: '#000000',
-    brushSize: 6,
-    isEraser: false,
-    opacity: 1
+    brushSize: 6
   });
   const [isDrawingActive, setIsDrawingActive] = useState(false);
   const [lastPoint, setLastPoint] = useState<Point | null>(null);
@@ -76,7 +74,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   const [currentTool, setCurrentTool] = useState<string>('Brush');
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [brushSize, setBrushSize] = useState(6);
-  const [isAdjustingSize, setIsAdjustingSize] = useState(false);
+  const [scale, setScale] = useState(1);
 
   // Handle canvas resize
   useEffect(() => {
@@ -103,13 +101,15 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       canvas.style.height = `${newHeight}px`;
       
       // Set actual size with pixel density
-      const scale = window.devicePixelRatio;
-      canvas.width = Math.floor(width * scale);
-      canvas.height = Math.floor(newHeight * scale);
+      const newScale = window.devicePixelRatio;
+      setScale(newScale);
+
+      canvas.width = Math.floor(width * newScale);
+      canvas.height = Math.floor(newHeight * newScale);
       
       // Scale context to match pixel density
       if (context) {
-        context.scale(scale, scale);
+        context.scale(newScale, newScale);
         context.lineCap = 'round';
         context.lineJoin = 'round';
       }
@@ -180,17 +180,18 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     };
   }, [socket]);
 
-  const drawLine = (from: Point, to: Point, color: string, brushSize: number, isEraser: boolean = false) => {
+  const drawLine = (start: Point, end: Point, color: string, brushSize: number, isEraser = false) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!context || !canvas) return;
 
     context.beginPath();
+    context.moveTo(start.x, start.y);
+    context.lineTo(end.x, end.y);
     context.strokeStyle = isEraser ? '#FFFFFF' : color;
     context.lineWidth = brushSize;
-    context.moveTo(from.x, from.y);
-    context.lineTo(to.x, to.y);
     context.stroke();
+    context.closePath();
   };
 
   const clearCanvas = () => {
@@ -199,6 +200,10 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     if (!context || !canvas) return;
 
     context.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Save the blank state as the first state in history
+    const blankState = context.getImageData(0, 0, canvas.width, canvas.height);
+    setDrawHistory([blankState]);  // Instead of empty array, set it to contain the blank state
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -209,6 +214,10 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       y: e.nativeEvent.offsetY
     };
 
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!context || !canvas) return;
+
     if (currentTool === 'Fill') {
       const scale = window.devicePixelRatio;
       floodFill(
@@ -217,33 +226,30 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
         tools.color
       );
       
-      // Emit fill action to other users
       socket.emit('fill', {
         lobbyId,
         point,
         color: tools.color
       });
-      
-      saveDrawState();
-      return;
-    } else {
-      const isEraser = currentTool === 'Eraser';
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext('2d');
-      if (context && canvas) {
-        context.beginPath();
-        context.fillStyle = isEraser ? '#FFFFFF' : tools.color;
-        context.arc(point.x, point.y, tools.brushSize / 2, 0, Math.PI * 2);
-        context.fill();
 
-        socket.emit('draw_dot', {
-          lobbyId,
-          point,
-          color: isEraser ? '#FFFFFF' : tools.color,
-          brushSize: tools.brushSize
-        });
-      }
+      // Save state after fill since it's a single action
+      saveCanvasState();
+      return;
     }
+
+    // Draw dot
+    const isEraser = currentTool === 'Eraser';
+    context.beginPath();
+    context.fillStyle = isEraser ? '#FFFFFF' : tools.color;
+    context.arc(point.x, point.y, tools.brushSize / 2, 0, Math.PI * 2);
+    context.fill();
+
+    socket.emit('draw_dot', {
+      lobbyId,
+      point,
+      color: isEraser ? '#FFFFFF' : tools.color,
+      brushSize: tools.brushSize
+    });
     
     setIsDrawingActive(true);
     setLastPoint(point);
@@ -283,11 +289,11 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
   };
 
   const handlePointerUp = () => {
+    if (isDrawingActive) {
+      saveCanvasState(); // Save state when the drawing action is complete
+    }
     setIsDrawingActive(false);
     setLastPoint(null);
-    if (isDrawing) {
-      saveDrawState();
-    }
   };
 
   const handlePointerLeave = () => {
@@ -296,38 +302,71 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     }
   };
 
-  const saveDrawState = () => {
+  const saveCanvasState = () => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!context || !canvas) return;
     
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    setDrawHistory(prev => [...prev, imageData]);
+    try {
+      // Save the full resolution state
+      const currentState = context.getImageData(0, 0, canvas.width, canvas.height);
+      setDrawHistory(prev => {
+        // Don't save if the new state is identical to the last state
+        const lastState = prev[prev.length - 1];
+        if (lastState && areStatesEqual(currentState, lastState)) {
+          return prev;
+        }
+        
+        const newHistory = [...prev, currentState];
+        return newHistory.length > MAX_HISTORY_LENGTH 
+          ? newHistory.slice(-MAX_HISTORY_LENGTH) 
+          : newHistory;
+      });
+    } catch (error) {
+      console.error('Failed to save canvas state:', error);
+    }
   };
 
   const handleUndo = () => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
-    if (!context || !canvas || drawHistory.length === 0) return;
+    if (!context || !canvas || drawHistory.length <= 1) return;
 
-    if (drawHistory.length > 1) {
-      const previousState = drawHistory[drawHistory.length - 2];
+    try {
+      // Remove current state
+      const newHistory = drawHistory.slice(0, -1);
+      const previousState = newHistory[newHistory.length - 1];
+      
+      // Reset the transform before applying the state
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height);
       context.putImageData(previousState, 0, 0);
-      setDrawHistory(prev => prev.slice(0, -1));
+      
+      // Restore the scale
+      context.setTransform(scale, 0, 0, scale, 0, 0);
+      
+      setDrawHistory(newHistory);
+      
+      // Emit the new state
       socket.emit('canvas_state', { lobbyId, imageData: previousState });
-    } else {
-      clearCanvas();
+    } catch (error) {
+      console.error('Failed to undo:', error);
     }
   };
 
-  // Update getCursorStyle to show brush cursor for eraser in white
+  // Update getCursorStyle to use tools.color for brush
   const getCursorStyle = (isDrawing: boolean, currentTool: string, size: number, color: string) => {
     if (!isDrawing) return 'default';
     if (currentTool === 'Fill') {
       return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M16.56 8.94L7.62 0L6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" fill="black"/></svg>') 0 20, auto`;
     }
-    // Use white cursor for eraser, otherwise use selected color
-    return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="none" stroke="${currentTool === 'Eraser' ? 'white' : encodeURIComponent(color)}" stroke-width="1"/></svg>') ${size/2} ${size/2}, auto`;
+
+    if (currentTool === 'Eraser') {
+      return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="none" stroke="white" stroke-width="1"/></svg>') ${size/2} ${size/2}, auto`;
+    }
+    
+    // Brush cursor: filled circle with selected color
+    return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="${encodeURIComponent(tools.color)}"/></svg>') ${size/2} ${size/2}, auto`;
   };
 
   // Add a useEffect to handle window-wide pointer up
@@ -336,7 +375,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
       setIsDrawingActive(false);
       setLastPoint(null);
       if (isDrawing) {
-        saveDrawState();
+        saveCanvasState();
       }
     };
 
@@ -400,6 +439,43 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
     ctx.putImageData(imageData, 0, 0);
   };
 
+  // Add initial state save when component mounts
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!context || !canvas) return;
+    
+    // Save initial blank state
+    const initialState = context.getImageData(0, 0, canvas.width, canvas.height);
+    setDrawHistory([initialState]);
+  }, []);
+
+  const handleColorSelect = (color: string) => {
+    // Only switch to Brush if currently using Eraser
+    if (currentTool === 'Eraser') {
+      setCurrentTool('Brush');
+    }
+    
+    setTools(prev => ({
+      ...prev,
+      color: color
+    }));
+  };
+
+  // Add helper function to compare states
+  const areStatesEqual = (state1: ImageData, state2: ImageData) => {
+    if (state1.width !== state2.width || state1.height !== state2.height) {
+      return false;
+    }
+    
+    for (let i = 0; i < state1.data.length; i++) {
+      if (state1.data[i] !== state2.data[i]) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   return (
     <div 
       ref={containerRef} 
@@ -413,7 +489,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
           style={{
             width: dimensions.width,
             height: dimensions.height,
-            cursor: getCursorStyle(isDrawing, currentTool, brushSize * 2, tools.color)
+            cursor: getCursorStyle(isDrawing, currentTool, brushSize, tools.color)
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -437,10 +513,7 @@ export default function DrawingCanvas({ socket, lobbyId, isDrawing }: DrawingCan
             {COLOR_PRESETS.map((color) => (
               <button
                 key={color.value}
-                onClick={() => {
-                  setTools(prev => ({ ...prev, color: color.value }));
-                  setCurrentTool('Brush'); // Switch to brush when picking a color
-                }}
+                onClick={() => handleColorSelect(color.value)}
                 className={`w-6 h-6 rounded-full transition-all shadow-sm ${
                   tools.color === color.value 
                     ? 'ring-2 ring-[#FF4655] ring-offset-2 ring-offset-[#0F1923] scale-110' 

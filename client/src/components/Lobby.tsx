@@ -35,6 +35,32 @@ function isValidCategory(category: string): category is CategoryKey {
   return category in defaultCategories;
 }
 
+const selectStyle = {
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 12px center'
+};
+
+const CheckmarkIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="white"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+// Extract shared checkbox styles into a constant
+const checkboxContainerStyle = "w-5 h-5 border-2 border-[#ff4655]/60 rounded-sm relative group-hover:border-[#ff4655]/100 transition-colors flex items-center justify-center bg-[#1A1F24]";
+const checkboxIndicatorStyle = "absolute inset-0 bg-[#ff4655] rounded-sm flex items-center justify-center";
+
 export default function Lobby({ lobbyId, username, socket, onCreateLobby, onExit, onGameStart }: LobbyProps) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -246,25 +272,10 @@ export default function Lobby({ lobbyId, username, socket, onCreateLobby, onExit
                     })}
                     className="hidden"
                   />
-                  <div className="w-5 h-5 border-2 border-white/30 rounded-sm relative
-                    group-hover:border-white/50 transition-colors flex items-center justify-center
-                    bg-[#1A1F24]"
-                  >
+                  <div className={checkboxContainerStyle}>
                     {settings.categories[category] && (
-                      <div className="absolute inset-0 bg-[#ff4655] rounded-sm flex items-center justify-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="white"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
+                      <div className={checkboxIndicatorStyle}>
+                        <CheckmarkIcon />
                       </div>
                     )}
                   </div>
@@ -316,11 +327,7 @@ export default function Lobby({ lobbyId, username, socket, onCreateLobby, onExit
                 className="w-full px-4 py-2 bg-[#1A1F24] border border-[#333940] rounded 
                   text-white focus:outline-none focus:border-[#ff4655]
                   tracking-wider appearance-none cursor-pointer"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 12px center'
-                }}
+                style={selectStyle}
               >
                 {[15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 200, 300].map((time) => (
                   <option key={time} value={time}>{time}s</option>
@@ -336,11 +343,7 @@ export default function Lobby({ lobbyId, username, socket, onCreateLobby, onExit
                 className="w-full px-4 py-2 bg-[#1A1F24] border border-[#333940] rounded 
                   text-white focus:outline-none focus:border-[#ff4655]
                   tracking-wider appearance-none cursor-pointer"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 12px center'
-                }}
+                style={selectStyle}
               >
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((round) => (
                   <option key={round} value={round}>{round}</option>
@@ -356,11 +359,7 @@ export default function Lobby({ lobbyId, username, socket, onCreateLobby, onExit
                 className="w-full px-4 py-2 bg-[#1A1F24] border border-[#333940] rounded 
                   text-white focus:outline-none focus:border-[#ff4655]
                   tracking-wider appearance-none cursor-pointer"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 12px center'
-                }}
+                style={selectStyle}
               >
                 {[5, 10, 20, 30, 40, 50].map((players) => (
                   <option key={players} value={players}>{players}</option>
@@ -376,16 +375,60 @@ export default function Lobby({ lobbyId, username, socket, onCreateLobby, onExit
                 className="w-full px-4 py-2 bg-[#1A1F24] border border-[#333940] rounded 
                   text-white focus:outline-none focus:border-[#ff4655]
                   tracking-wider appearance-none cursor-pointer"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 12px center'
-                }}
+                style={selectStyle}
               >
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((delay) => (
                   <option key={delay} value={delay}>{delay}s</option>
                 ))}
               </select>
+            </div>
+
+            <div className="col-span-2 space-y-2">
+              <label className="group flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={settings.modifiers.reduceTimeOnGuess}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    modifiers: {
+                      ...prev.modifiers,
+                      reduceTimeOnGuess: e.target.checked
+                    }
+                  }))}
+                />
+                <div className={checkboxContainerStyle}>
+                  {settings.modifiers.reduceTimeOnGuess && (
+                    <div className={checkboxIndicatorStyle}>
+                      <CheckmarkIcon />
+                    </div>
+                  )}
+                </div>
+                <span className="text-sm text-gray-200">Reduce time to 30s when word is guessed</span>
+              </label>
+
+              <label className="group flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={settings.modifiers.allowReroll}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    modifiers: {
+                      ...prev.modifiers,
+                      allowReroll: e.target.checked
+                    }
+                  }))}
+                />
+                <div className={checkboxContainerStyle}>
+                  {settings.modifiers.allowReroll && (
+                    <div className={checkboxIndicatorStyle}>
+                      <CheckmarkIcon />
+                    </div>
+                  )}
+                </div>
+                <span className="text-sm text-gray-200">Allow re-rolling word once</span>
+              </label>
             </div>
           </div>
         </div>
