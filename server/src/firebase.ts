@@ -1,19 +1,21 @@
 import admin from 'firebase-admin';
+import * as path from 'path';
 import dotenv from 'dotenv';
 import type { LobbyState } from './types';
 
 // Load environment variables
 dotenv.config();
 
-const serviceAccount = {
-  project_id: process.env.FIREBASE_PROJECT_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  client_email: process.env.FIREBASE_CLIENT_EMAIL
-};
+const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+if (!serviceAccountPath) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_PATH is not defined in environment variables');
+}
+
+const serviceAccount = require(path.resolve(serviceAccountPath));
 
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount)
+    credential: admin.credential.cert(serviceAccount)
   });
 }
 
@@ -53,4 +55,6 @@ export async function lobbyExists(lobbyId: string): Promise<boolean> {
     console.error('Error checking lobby existence:', error);
     return false;
   }
-} 
+}
+
+export default admin; 
